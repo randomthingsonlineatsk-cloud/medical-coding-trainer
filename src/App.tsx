@@ -10,12 +10,13 @@ import Synonyms from './views/Synonyms'
 import Review from './views/Review'
 import Upgrade from './views/Upgrade'
 import Outputs from './views/Outputs'
+import Retrieval from './views/Retrieval'
 import { MissionBar } from './views/Missions'
 
-export type View = 'workbench' | 'dictionary' | 'synonyms' | 'review' | 'upgrade' | 'outputs'
+export type View = 'workbench' | 'dictionary' | 'synonyms' | 'review' | 'upgrade' | 'retrieval' | 'outputs'
 const VIEWS: { id: View; label: string }[] = [
   { id: 'workbench', label: 'Coding workbench' }, { id: 'dictionary', label: 'Dictionaries' }, { id: 'synonyms', label: 'Synonym lists' },
-  { id: 'review', label: 'Review and QC' }, { id: 'upgrade', label: 'Upversioning' }, { id: 'outputs', label: 'Outputs' },
+  { id: 'review', label: 'Review and QC' }, { id: 'upgrade', label: 'Upversioning' }, { id: 'retrieval', label: 'Retrieval' }, { id: 'outputs', label: 'Outputs' },
 ]
 const NavCtx = createContext<{ view: View; arg?: string; go: (v: View, arg?: string) => void }>({ view: 'workbench', go: () => {} })
 export const useNav = () => useContext(NavCtx)
@@ -27,7 +28,7 @@ function Shell() {
   const [page, setPage] = useState<'home' | 'learn'>(() => (location.hash === '#/learn' ? 'learn' : 'home'))
   const go = (view: View, arg?: string) => { setNav({ view, arg }); window.scrollTo({ top: 0 }) }
   const s = p ? stats(p) : null
-  const V = { workbench: Workbench, dictionary: Dictionary, synonyms: Synonyms, review: Review, upgrade: Upgrade, outputs: Outputs }[nav.view]
+  const V = { workbench: Workbench, dictionary: Dictionary, synonyms: Synonyms, review: Review, upgrade: Upgrade, retrieval: Retrieval, outputs: Outputs }[nav.view]
   return (
     <NavCtx.Provider value={{ ...nav, go }}>
       <div className="min-h-screen bg-lab-bg text-lab-text flex flex-col">

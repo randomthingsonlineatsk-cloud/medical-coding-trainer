@@ -3,6 +3,7 @@ import { useStore } from '../state'
 import { createProject, stats, type CodingProject } from '../domain/coding'
 import { STUDIES, type Form } from '../domain/catalogue'
 import { download } from '../domain/store'
+import { importConsoleFiles } from '../domain/importer'
 import Missions from './Missions'
 import { Btn, Panel, Pill, Table, fmtUtc, ic } from './ui'
 
@@ -12,6 +13,9 @@ export default function Home({ onOpen }: { onOpen: () => void }) {
   const [forms, setForms] = useState<Form[]>(['AE', 'MH', 'CM'])
   const [name, setName] = useState('Practice coding')
   const file = useRef<HTMLInputElement>(null)
+  const cfile = useRef<HTMLInputElement>(null)
+  const [notes, setNotes] = useState<string[]>([])
+  const importConsole = async (fs: File[]) => { try { const { project, notes } = await importConsoleFiles(fs, 'HLV-204-201 from the CDM console'); setNotes(notes); open(project); onOpen() } catch (e) { setError((e as Error).message) } }
   const toggle = <T,>(xs: T[], x: T) => (xs.includes(x) ? xs.filter((y) => y !== x) : [...xs, x])
   const n = (s: string[], f: Form[]) => createProject({ name: 'x', studies: s, forms: f }).records.length
   const importFile = async (f: File) => {
@@ -35,6 +39,11 @@ export default function Home({ onOpen }: { onOpen: () => void }) {
             <Btn tone="solid" disabled={!studies.length || !forms.length} onClick={() => { open(createProject({ name, studies, forms, seed: Date.now() % 1000 })); onOpen() }}>Create ({studies.length && forms.length ? n(studies, forms) : 0} records)</Btn>
           </div>
         </div>
+      </Panel>
+      <Panel title="Code a CDM console export" sub="The CDM Query & Edit-Check Console's archive and interim snapshots hold one CDASH-style CSV per form. Choose the zip, or ae.csv, mh.csv and cm.csv from its data folder: the trainer makes a project of their verbatim terms. Verbatims outside the answer key are graded when they match a current term or a single-class drug record exactly."
+        right={<><Btn tone="solid" onClick={() => cfile.current?.click()}>Choose the console files</Btn><input ref={cfile} type="file" multiple accept=".zip,.csv" className="hidden" aria-label="Console files" onChange={(e) => { const fs = [...(e.target.files ?? [])]; if (fs.length) importConsole(fs); e.target.value = '' }} /></>}>
+        {notes.length > 0 && <ul className="text-xs text-lab-text-muted list-disc ml-5">{notes.map((n) => <li key={n}>{n}</li>)}</ul>}
+        <p className="text-xs text-lab-text-muted">In the console: Lock, then the interim lock or the archive. <a className="text-lab-fda underline" href="https://randomthingsonlineatsk-cloud.github.io/cdm-query-console/" target="_blank" rel="noreferrer">Open the console</a>.</p>
       </Panel>
       <Missions onOpen={onOpen} />
       <Panel title="Your projects" right={<><Btn tone="grey" onClick={() => file.current?.click()}>Open a project file</Btn><input ref={file} type="file" accept=".json" className="hidden" aria-label="Project file" onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = '' }} /></>}>

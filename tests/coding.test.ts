@@ -151,7 +151,7 @@ describe('missions, outputs, certificate', () => {
     void smdOf
   })
   test('certificate code', () => {
-    const ps = ['M1', 'M2', 'M3', 'M4', 'M5'].map((id) => { const p = createProject({ name: id, studies: ['HLV-204-201'], forms: ['AE'] }); p.mission = { id, level: 'expert', startedUtc: 'x', endedUtc: '2026-11-10T00:00:00Z', score: 90 }; return p })
+    const ps = ['M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7'].map((id) => { const p = createProject({ name: id, studies: ['HLV-204-201'], forms: ['AE'] }); p.mission = { id, level: 'expert', startedUtc: 'x', endedUtc: '2026-11-10T00:00:00Z', score: 90 }; return p })
     const c = certificate(ps, 'L-1', 'Test Learner')
     expect(c.eligible).toBe(true); expect(c.code).toMatch(/^MCT-[0-9A-F]{5}-[0-9A-F]{5}$/); expect(c.distinction).toBe(true)
     expect(certificate(ps.slice(1), 'L-1', 'Test Learner').eligible).toBe(false)

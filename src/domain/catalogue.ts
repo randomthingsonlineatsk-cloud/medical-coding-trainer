@@ -9,7 +9,7 @@ export type Answer =
   | { pt: string; llt?: string }                       // medical: the preferred term (and the best LLT)
   | { ing: string; atc: string; trade?: string }       // drug: ingredients, class, and the trade-name record if one was reported
   | { query: 'split' | 'clarify' | 'not-drug' }        // the coder should query the site
-export interface Item { id: string; study: string; form: Form; v: string; ind?: string; route?: string; n: number; ans: Answer; cc: string; clarify?: string[]; q3?: Answer; why?: string }
+export interface Item { id: string; study: string; form: Form; v: string; ind?: string; route?: string; n: number; ans: Answer; cc: string; clarify?: string[]; q3?: Answer; why?: string; lang?: 'de' | 'es' | 'ja' | 'zh' | 'hi'; en?: string }
 
 export const STUDIES = [
   { id: 'HLV-204-201', name: 'VASCLEAR-2, hypertension', sites: ['101', '102', '103', '104', '105', '106'] },
@@ -154,8 +154,8 @@ cm(R, 'Montelukast', 'Asthma', 3, { ing: 'montelukast', atc: 'Q03DC' })
 cm(R, 'Prednisolone', 'Asthma exacerbation', 2, { ing: 'prednisolone', atc: 'T02AB' })
 cm(R, 'Mucosolv', 'Productive cough', 1, { ing: 'acetylcysteine', atc: 'Q05CB', trade: 'Mucosolv' })
 cm(R, 'Nystatin oral suspension', 'Oral thrush', 2, { ing: 'nystatin', atc: 'E01AB' }, 'CC-23')
-cm(R, 'Antibiotic', 'Chest infection', 1, clar, 'CC-26', { clarify: ['Amoxicillin'] })
-cm(R, 'Amoxicillin', 'Chest infection', 0, { ing: 'amoxicillin', atc: 'I01CA' })
+cm(R, 'Antibiotic', 'Community-acquired pneumonia', 1, clar, 'CC-26', { clarify: ['Amoxicillin'] })
+cm(R, 'Amoxicillin', 'Community-acquired pneumonia', 0, { ing: 'amoxicillin', atc: 'I01CA' })
 cm(R, 'Cetirizine', 'Hay fever', 3, { ing: 'cetirizine', atc: 'Q06AE' })
 
 // ---------- DRM-501-201 (atopic dermatitis) ----------
@@ -196,6 +196,23 @@ cm(D, 'Cetirizine', 'Itching', 3, { ing: 'cetirizine', atc: 'Q06AE' })
 cm(D, 'Valaciclovir', 'Cold sore', 1, { ing: 'valaciclovir', atc: 'I05AB' })
 cm(D, 'Ibufen', 'Headache', 1, { ing: 'ibuprofen', atc: 'O01AE', trade: 'Ibufen' })
 
+// ---------- verbatims in other languages (CC-12) ----------
+const lang = (study: string, v: string, n: number, ans: Answer, l: Item['lang'], en: string, cc = 'CC-12', extra: Partial<Item> = {}) => ae(study, v, n, ans, cc, { lang: l, en, ...extra })
+lang(H, 'Kopfschmerzen', 3, { pt: 'Head pain', llt: 'Headache' }, 'de', 'Headache')
+lang(H, 'Kopfweh', 1, { pt: 'Head pain', llt: 'Headache' }, 'de', 'Headache (colloquial)', 'CC-12', { why: 'Colloquial German: not in the language version, but the meaning is clear. Record the translation.' })
+lang(H, 'Schwindel', 1, clar, 'de', 'Dizziness or vertigo', 'CC-12', { clarify: ['Schwindelgefühl'], why: 'German "Schwindel" covers both light-headedness and spinning vertigo: ask which.' })
+lang(H, 'Schwindelgefühl', 0, { pt: 'Light-headedness', llt: 'Dizziness' }, 'de', 'Dizziness')
+lang(H, 'सिरदर्द', 2, { pt: 'Head pain', llt: 'Headache' }, 'hi', 'Headache')
+lang(H, 'chakkar aana', 1, { pt: 'Light-headedness', llt: 'Dizziness' }, 'hi', 'Dizziness (Hindi, in Latin letters)', 'CC-12', { why: 'Romanised Hindi for feeling dizzy: the meaning is clear; record the translation.' })
+lang(R, '頭痛', 3, { pt: 'Head pain', llt: 'Headache' }, 'ja', 'Headache')
+lang(R, '咳嗽', 2, { pt: 'Cough', llt: 'Cough' }, 'ja', 'Cough')
+lang(R, 'めまい', 1, clar, 'ja', 'Dizziness or vertigo', 'CC-12', { clarify: ['浮動性めまい'], why: 'Japanese めまい is used for both; the Japanese terminology separates 浮動性めまい (dizziness) from 回転性めまい (vertigo).' })
+lang(R, '浮動性めまい', 0, { pt: 'Light-headedness', llt: 'Dizziness' }, 'ja', 'Dizziness')
+lang(D, 'Prurito', 2, { pt: 'Itching', llt: 'Pruritus' }, 'es', 'Itching')
+lang(D, 'Picor en los brazos', 1, { pt: 'Itching', llt: 'Itchy skin' }, 'es', 'Itching on the arms', 'CC-12')
+lang(D, 'dolor de cabeza', 1, { pt: 'Head pain', llt: 'Headache' }, 'es', 'Headache', 'CC-12')
+lang(D, '头痛', 1, { pt: 'Head pain', llt: 'Headache' }, 'zh', 'Headache')
+
 export const CATALOGUE = I
 export const itemById = new Map(I.map((x) => [x.id, x]))
 export const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.;,]+$/, '')
@@ -205,3 +222,13 @@ export function itemFor(study: string, form: Form, verbatim: string, ind = ''): 
   return list.find((x) => norm(x.ind ?? '') === norm(ind)) ?? list[0] ?? I.find((x) => x.form === form && norm(x.v) === v)
 }
 export const answerIn = (it: Item, sdd: 'Q1' | 'Q3'): Answer => (sdd === 'Q3' && it.q3 ? it.q3 : it.ans)
+
+// Indications are coded with the medical dictionary (CC-28). The answer for each indication text:
+// the LLT, or a query when the indication is too vague to code.
+export const INDICATIONS: Record<string, { llt: string } | { query: true; clarify: string }> = {
+  'prevention of heart attack': { llt: 'Prevention of heart attack' }, 'dry skin': { llt: 'Dry skin' }, 't2dm': { llt: 'Type 2 diabetes mellitus' },
+  pain: { query: true, clarify: 'Headache' }, 'hay fever': { llt: 'Hay fever' },
+}
+// Items for verbatims outside the catalogue (records imported from the CDM console): an exact
+// current LLT or a single-class drug record answers itself.
+export interface Derived { ans: Answer; cc: string }
