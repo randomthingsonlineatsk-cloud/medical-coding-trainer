@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../state'
-import { approve, sendBack, consistency, label, verdict, stats, me, type Rec } from '../domain/coding'
+import { approve, sendBack, consistency, label, verdict, stats, me, smdOf, raiseQuery, type Rec } from '../domain/coding'
+import { ptOf } from '../domain/dictmed'
 import { showVerdicts } from './Workbench'
 import { Btn, Panel, Pill, Stat, Table, TextArea } from './ui'
 
@@ -51,11 +52,30 @@ export default function Review() {
         )}
       </Panel>
 
+      <CrossCheck />
+
       {flagged.length > 0 && (
         <Panel title="Flagged records">
           <Table head={['Record', 'Verbatim', 'Status', 'Flags']} rows={flagged.slice(0, 100).map((r) => [r.id, r.verbatim, r.status, <span className="text-[11px] text-lab-amber">{r.flags!.join('; ')}</span>])} />
         </Panel>
       )}
     </div>
+  )
+}
+
+// Indication cross-check: a medication whose coded indication has no matching history or event
+// for the same participant. In practice the reviewer asks the site whether an adverse event or a
+// history entry is missing (a painkiller started for new knee pain is often an unreported AE).
+function CrossCheck() {
+  const { p, act } = useStore()
+  const d = smdOf(p!)
+  const pts = new Map<string, Set<string>>()
+  for (const r of p!.records.filter((x) => x.form !== 'CM' && x.code && ['coded', 'approved'].includes(x.status))) { const k = `${r.study}|${r.subj}`, pt = ptOf(d, r.code!)?.name; if (pt) pts.set(k, (pts.get(k) ?? new Set()).add(pt)) }
+  const gaps = p!.records.filter((r) => r.form === 'CM' && r.indCode && ['coded', 'approved'].includes(r.status) && !pts.get(`${r.study}|${r.subj}`)?.has(ptOf(d, r.indCode!)?.name ?? ''))
+  if (!p!.records.some((r) => r.form === 'CM')) return null
+  return (
+    <Panel title={`Indication cross-check (${gaps.length})`} sub="Medications whose coded indication matches no medical history or adverse event of the same participant. Each is a question for the site: is a history entry or an adverse event missing? (Medical history and events must be in the project for this check.)">
+      <Table head={['Record', 'Participant', 'Medication', 'Indication', '']} empty="Every coded indication matches the participant's history or events." rows={gaps.slice(0, 60).map((r) => [r.id, `${r.study} ${r.subj}`, r.verbatim, `${r.ind} → ${ptOf(d, r.indCode!)?.name}`, r.flags?.some((f) => f.startsWith('Cross-check')) ? <Pill tone="purple">asked</Pill> : <Btn tone="grey" onClick={() => act((x) => { const rec = x.records.find((y) => y.id === r.id)!; rec.flags = [...(rec.flags ?? []), 'Cross-check: site asked whether a history entry or AE is missing']; rec.trail.push({ utc: new Date().toISOString(), by: me(x).name, what: 'Cross-check question to the site: indication without matching history or adverse event' }) })}>Ask the site</Btn>])} />
+    </Panel>
   )
 }

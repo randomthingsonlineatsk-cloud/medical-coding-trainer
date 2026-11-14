@@ -8,23 +8,25 @@ import { drugRec, smdOf, stats, consistency, sddName, type CodingProject } from 
 const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
 export function medCsv(p: CodingProject, form: 'AE' | 'MH'): string {
   const P = form
-  const head = ['STUDYID', 'USUBJID', `${P}TERM`, `${P}LLT`, `${P}LLTCD`, `${P}DECOD`, `${P}PTCD`, `${P}HLT`, `${P}HLTCD`, `${P}HLGT`, `${P}HLGTCD`, `${P}BODSYS`, `${P}BDSYCD`, `${P}SOC`, `${P}SOCCD`, 'SECONDARY_SOCS', 'CODING_STATUS', 'DICTIONARY']
+  const head = ['STUDYID', 'USUBJID', `${P}TERM`, 'TRANSLATION', `${P}LLT`, `${P}LLTCD`, `${P}DECOD`, `${P}PTCD`, `${P}HLT`, `${P}HLTCD`, `${P}HLGT`, `${P}HLGTCD`, `${P}BODSYS`, `${P}BDSYCD`, `${P}SOC`, `${P}SOCCD`, 'SECONDARY_SOCS', 'CODING_STATUS', 'DICTIONARY']
   const d = smdOf(p)
   const rows = p.records.filter((r) => r.form === form && !['replaced', 'removed'].includes(r.status)).map((r) => {
     const pth = r.code ? path(d, r.code) : []
     const [soc, hlgt, hlt, pt, llt] = pth
     const sec = pt ? secondarySocs(d, pt.code).map((x) => x.name).join('; ') : ''
-    return [r.study, `${r.study}-${r.subj}`, r.verbatim, llt?.name, llt?.code, pt?.name, pt?.code, hlt?.name, hlt?.code, hlgt?.name, hlgt?.code, soc?.name, soc?.code, soc?.name, soc?.code, sec, r.status, `SMD ${p.smd} (training)`]
+    return [r.study, `${r.study}-${r.subj}`, r.verbatim, r.translation ?? '', llt?.name, llt?.code, pt?.name, pt?.code, hlt?.name, hlt?.code, hlgt?.name, hlgt?.code, soc?.name, soc?.code, soc?.name, soc?.code, sec, r.status, `SMD ${p.smd} (training)`]
   })
   return [head.map(q).join(','), ...rows.map((r) => r.map(q).join(','))].join('\r\n')
 }
+// The coded indication has no standard CM variable; it travels as a supplemental qualifier (SUPPCM).
 export function cmCsv(p: CodingProject): string {
-  const head = ['STUDYID', 'USUBJID', 'CMTRT', 'CMINDC', 'CMDECOD', 'DRUG_RECORD', 'CMCLAS', 'CMCLASCD', 'CODING_STATUS', 'DICTIONARY']
+  const head = ['STUDYID', 'USUBJID', 'CMTRT', 'CMINDC', 'CMDECOD', 'DRUG_RECORD', 'CMCLAS', 'CMCLASCD', 'CMINDC_LLT', 'CMINDC_PT', 'CODING_STATUS', 'DICTIONARY']
   const rows = p.records.filter((r) => r.form === 'CM' && !['replaced', 'removed'].includes(r.status)).map((r) => {
     const dr = drugRec(p.sdd, r.code)
     const cls = r.atc ? atcPath(r.atc).at(-1) : undefined
     const decod = dr ? dr.ingredients.map((x) => x.toUpperCase()).join(' + ') : ''
-    return [r.study, `${r.study}-${r.subj}`, r.verbatim, r.ind, decod, dr?.id, cls?.name, cls?.code, r.status, `${sddName(p.sdd)}`]
+    const il = r.indCode ? smdOf(p).terms.get(r.indCode) : undefined
+    return [r.study, `${r.study}-${r.subj}`, r.verbatim, r.ind, decod, dr?.id, cls?.name, cls?.code, il?.name, il ? path(smdOf(p), il.code)[3]?.name : '', r.status, `${sddName(p.sdd)}`]
   })
   return [head.map(q).join(','), ...rows.map((r) => r.map(q).join(','))].join('\r\n')
 }

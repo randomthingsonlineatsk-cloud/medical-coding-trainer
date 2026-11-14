@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useStore } from '../state'
-import { SMD, path, secondarySocs, medStats, V11_CHANGES, type Term } from '../domain/dictmed'
+import { SMD, path, secondarySocs, medStats, V11_CHANGES, TRANSLATIONS, LANG_NAME, type Term, type Lang } from '../domain/dictmed'
 import { ATC_CLASSES, atcByCode, SDD_Q3_CHANGES, drugsIn } from '../domain/dictdrug'
 import { sddName } from '../domain/coding'
 import { Panel, Pill, Table, Tabs, ic } from './ui'
@@ -47,6 +47,9 @@ function Smd() {
         {hits.length > 0 && <Table head={['Level', 'Term', 'Code', 'Path', 'Current']} rows={hits.map((t) => [t.level, t.name, <span className="font-mono">{t.code}</span>, <span className="text-lab-text-muted">{path(d, t.code).slice(0, -1).map((x) => x.name).join(' › ')}</span>, t.current ? 'Yes' : <Pill tone="red">No</Pill>])} />}
       </Panel>
       <Panel title="Hierarchy"><ul className="space-y-0.5">{kids(undefined).map((t) => <Node key={t.code} t={t} />)}</ul></Panel>
+      <Panel title="Language versions" sub="Each LLT has the same code in every language version, so a term coded in Japanese and one coded in English count together. The training versions cover the commonest terms only.">
+        <Table head={['LLT (English)', ...(Object.keys(LANG_NAME) as Lang[]).map((l) => LANG_NAME[l])]} rows={Object.entries(TRANSLATIONS).map(([en, tr]) => [en, ...(Object.keys(LANG_NAME) as Lang[]).map((l) => tr[l] ?? '')])} />
+      </Panel>
       <Panel title="What version 1.1 changes" sub="Released twice a year, a dictionary version retires terms, adds terms and moves terms in the hierarchy.">
         <Table head={['Change', 'Term', 'Note']} rows={V11_CHANGES.map((x) => [x.kind, 'llt' in x ? x.llt : x.pt, x.note])} />
       </Panel>

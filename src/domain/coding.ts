@@ -1,9 +1,9 @@
 // The coding engine: a project holds the verbatim records of one or more studies, the synonym
 // lists, the dictionary versions in force and the team. Records move uncoded -> coded (by the
 // autoencoder, a synonym or a coder) or query -> approved (by a reviewer who did not code them).
-import { SMD, path, ptOf, exactLlt, type MedDict, type Term } from './dictmed'
+import { SMD, path, ptOf, exactLlt, exactLltAny, LANG_NAME, type MedDict, type Term, type Lang } from './dictmed'
 import { drugsIn, SDD_VERSION, SDD_Q3_VERSION, atcByCode, type DrugRecord } from './dictdrug'
-import { CATALOGUE, STUDIES, itemFor, answerIn, norm, type Form, type Item, type Answer } from './catalogue'
+import { CATALOGUE, STUDIES, INDICATIONS, itemFor, answerIn, norm, type Form, type Item, type Answer } from './catalogue'
 import { rng, hash } from './util'
 
 export type SmdV = '1.0' | '1.1'
@@ -15,9 +15,12 @@ export const DEFAULT_TEAM: Member[] = [{ name: 'Anika Rao', role: 'coder' }, { n
 export type Status = 'uncoded' | 'coded' | 'query' | 'approved' | 'replaced' | 'removed'
 export interface Rec {
   id: string; study: string; subj: string; form: Form; verbatim: string; ind?: string; itemId?: string
-  status: Status; code?: string; atc?: string; method?: 'auto' | 'synonym' | 'manual'; by?: string; utc?: string
-  reviewedBy?: string; query?: { kind: 'split' | 'clarify' | 'not-drug'; text: string; by: string; utc: string; answer?: string }
-  queried?: boolean; flags?: string[]; comment?: string; parent?: string; trail: { utc: string; by: string; what: string }[]
+  status: Status; code?: string; atc?: string; method?: 'auto' | 'synonym' | 'manual' | 'assistant'; by?: string; utc?: string
+  indCode?: string; indMethod?: 'auto' | 'synonym' | 'manual' | 'assistant'; indBy?: string   // the indication, coded with the medical dictionary (CC-28)
+  lang?: Lang; translation?: string                                                            // a verbatim in another language and its recorded translation (CC-12)
+  suggestion?: { code?: string; atc?: string; query?: 'split' | 'clarify' | 'not-drug'; conf: number; why: string; decision?: 'accepted' | 'rejected'; reason?: string; by?: string; verbatim?: string; ind?: string }
+  reviewedBy?: string; query?: { kind: 'split' | 'clarify' | 'not-drug' | 'indication'; text: string; by: string; utc: string; answer?: string }
+  queried?: boolean; indQueried?: boolean; flags?: string[]; comment?: string; parent?: string; trail: { utc: string; by: string; what: string }[]
 }
 export interface Synonym { id: string; scope: 'company' | string; dict: 'SMD' | 'SDD'; verbatim: string; code: string; atc?: string; status: 'approved' | 'proposed' | 'retired'; by: string; approvedBy?: string; note?: string; utc: string }
 export interface Signature { name: string; role: string; meaning: string; utc: string }
@@ -28,6 +31,10 @@ export interface CodingProject {
   team: Member[]; as: number; history: { utc: string; by: string; what: string }[]
   mission?: { id: string; level: 'guided' | 'standard' | 'expert'; startedUtc: string; endedUtc?: string; score?: number; detail?: string[] }
   reviewedImpact?: boolean
+  assistant?: boolean                       // the AI coding assistant is switched on
+  answers?: Record<string, string>          // answers to mission questions (data retrieval)
+  customQueries?: { id: string; name: string; pts: string[]; by: string }[]
+  source?: string                           // where the records came from (e.g. a CDM console export)
 }
 
 const now = () => new Date().toISOString()
@@ -73,13 +80,30 @@ export function makeRecords(studies: string[], forms: Form[], seed = 7): Rec[] {
   let n = 0
   for (const st of STUDIES.filter((s) => studies.includes(s.id))) {
     const subjects = st.sites.flatMap((site) => Array.from({ length: 8 }, (_, i) => `${site}-${String(i + 1).padStart(3, '0')}`))
-    for (const it of CATALOGUE.filter((x) => x.study === st.id && forms.includes(x.form))) for (let i = 0; i < it.n; i++) {
-      out.push({ id: `R${String(++n).padStart(4, '0')}`, study: st.id, subj: r.pick(subjects), form: it.form, verbatim: it.v, ind: it.ind, itemId: it.id, status: 'uncoded', trail: [{ utc: '2026-10-01T08:00:00.000Z', by: 'EDC extract', what: `Verbatim received: "${it.v}"` }] })
+    // Medical history and events first; a medication usually goes to a participant whose history
+    // or events include its indication (about 85%), so the indication cross-check finds real gaps.
+    const items = CATALOGUE.filter((x) => x.study === st.id && forms.includes(x.form)).sort((a, b) => Number(a.form === 'CM') - Number(b.form === 'CM'))
+    const ptsBy = new Map<string, Set<string>>()
+    for (const it of items) for (let i = 0; i < it.n; i++) {
+      let subj = r.pick(subjects)
+      if (it.form === 'CM' && it.ind) {
+        const want = indicationPt(it.ind)
+        const fit = subjects.filter((s) => want && ptsBy.get(s)?.has(want))
+        if (fit.length && r.chance(0.85)) subj = r.pick(fit)
+      } else if ('pt' in it.ans) { const set = ptsBy.get(subj) ?? new Set(); set.add(it.ans.pt); ptsBy.set(subj, set) }
+      out.push({ id: `R${String(++n).padStart(4, '0')}`, study: st.id, subj, form: it.form, verbatim: it.v, ind: it.ind, itemId: it.id, status: 'uncoded', trail: [{ utc: '2026-10-01T08:00:00.000Z', by: 'EDC extract', what: `Verbatim received: "${it.v}"` }] })
     }
   }
   for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(r.next() * (i + 1)); [out[i], out[j]] = [out[j], out[i]] }
   return out
 }
+// The LLT (and PT) an indication text codes to, if it codes at all.
+export function indicationLlt(ind: string, d: MedDict = SMD['1.0']): Term | undefined {
+  const k = INDICATIONS[norm(ind)]
+  if (k && 'query' in k) return undefined
+  return exactLlt(d, k ? k.llt : ind)
+}
+export const indicationPt = (ind: string, d: MedDict = SMD['1.0']) => { const t = indicationLlt(ind, d); return t ? ptOf(d, t.code)?.name : undefined }
 export function createProject(opts: { name: string; studies: string[]; forms: Form[]; seed?: number; synonyms?: Synonym[] }): CodingProject {
   const t = now()
   return { schema: 1, id: `MC-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, name: opts.name, created: t, updated: t, studies: opts.studies, forms: opts.forms,
@@ -106,26 +130,56 @@ export function autoencode(p: CodingProject): { auto: number; synonym: number; l
       const atc = s?.atc ?? (rec.atc.length === 1 ? rec.atc[0] : undefined)
       if (!atc) { needClass++; r.flags = [...new Set([...(r.flags ?? []), 'Class needed: the record has more than one class'])]; continue }
       Object.assign(r, { status: 'coded', code: rec.id, atc, method: exactDrugIn(p.sdd, r.verbatim) && !s?.atc ? 'auto' : 'synonym', by: 'Autoencoder', utc: now() })
+      autoIndication(p, r)
       trail(p, r, `Autoencoded to ${rec.name} (${rec.id}), class ${atc}${s ? ` by synonym "${s.verbatim}"` : ''}`, 'Autoencoder')
       if (r.method === 'auto') auto++; else syn++
       continue
     }
-    const exact = exactLlt(d, r.verbatim)
+    const hit = exactLltAny(d, r.verbatim)
+    const exact = hit?.term
     const s = exact ? undefined : activeSynonym(p, r, 'SMD')
     const t = exact ?? (s ? d.terms.get(s.code) : undefined)
     if (!t || !t.current) continue
     Object.assign(r, { status: 'coded', code: t.code, method: exact ? 'auto' : 'synonym', by: 'Autoencoder', utc: now() })
-    trail(p, r, `Autoencoded to LLT ${t.name} (${t.code})${s ? ` by synonym "${s.verbatim}"` : ''}`, 'Autoencoder')
+    if (hit?.lang) { r.lang = hit.lang; r.translation = `${t.name} (${LANG_NAME[hit.lang]} language version)` }
+    trail(p, r, `Autoencoded to LLT ${t.name} (${t.code})${hit?.lang ? ` through the ${LANG_NAME[hit.lang]} language version` : ''}${s ? ` by synonym "${s.verbatim}"` : ''}`, 'Autoencoder')
     if (exact) auto++; else syn++
   }
+  for (const r of p.records.filter((x) => x.form === 'CM' && x.status === 'coded' && x.ind && !x.indCode)) autoIndication(p, r)
   const left = p.records.filter((x) => x.status === 'uncoded').length
   log(p, `Autoencoder: ${auto} exact, ${syn} by synonym, ${left} left for manual coding`)
   return { auto, synonym: syn, left, needClass }
 }
 
-// ---------- manual coding ----------
-export function codeMed(p: CodingProject, ids: string[], lltCode: string, synonym = false) {
+function autoIndication(p: CodingProject, r: Rec) {
+  if (!r.ind || r.indCode) return
+  const d = smdOf(p)
+  const syn = p.synonyms.find((x) => x.status === 'approved' && x.dict === 'SMD' && (x.scope === 'company' || x.scope === r.study) && x.verbatim === norm(r.ind!))
+  const exact = exactLlt(d, r.ind)
+  const t = exact ?? (syn ? d.terms.get(syn.code) : undefined)
+  if (!t || !t.current) return
+  r.indCode = t.code; r.indMethod = exact ? 'auto' : 'synonym'; r.indBy = 'Autoencoder'
+  trail(p, r, `Indication "${r.ind}" autoencoded to LLT ${t.name}`, 'Autoencoder')
+}
+export function codeIndication(p: CodingProject, ids: string[], lltCode: string) {
   needRole(p, 'coder', 'Coding')
+  const t = smdOf(p).terms.get(lltCode)
+  if (!t || t.level !== 'LLT' || !t.current) throw new Error('Choose a current lowest-level term for the indication.')
+  for (const id of ids) {
+    const r = p.records.find((x) => x.id === id)!
+    if (r.form !== 'CM' || !r.ind) continue
+    Object.assign(r, { indCode: t.code, indMethod: 'manual', indBy: me(p).name, reviewedBy: undefined, status: r.status === 'approved' ? 'coded' : r.status })
+    trail(p, r, `Indication "${r.ind}" coded to LLT ${t.name}`)
+  }
+  log(p, `Coded the indication of ${ids.length} record(s) to ${t.name}`)
+}
+export const isForeign = (r: Rec) => !!(r.lang ?? (r.itemId ? CATALOGUE.find((x) => x.id === r.itemId)?.lang : undefined)) || /[^\u0000-\u024f]/.test(r.verbatim)
+
+// ---------- manual coding ----------
+export function codeMed(p: CodingProject, ids: string[], lltCode: string, synonym = false, translation = '') {
+  needRole(p, 'coder', 'Coding')
+  const foreign = ids.map((id) => p.records.find((x) => x.id === id)!).filter(isForeign)
+  if (foreign.length && translation.trim().length < 3) throw new Error(`"${foreign[0].verbatim}" is not in English: record your translation before coding it (CC-12).`)
   const t = smdOf(p).terms.get(lltCode)
   if (!t || t.level !== 'LLT') throw new Error('Choose a lowest-level term.')
   if (!t.current) throw new Error(`${t.name} is not current in SMD ${p.smd}: choose a current LLT (CC-01).`)
@@ -133,7 +187,8 @@ export function codeMed(p: CodingProject, ids: string[], lltCode: string, synony
     const r = p.records.find((x) => x.id === id)!
     if (r.form === 'CM') throw new Error('Medications are coded with the drug dictionary.')
     Object.assign(r, { status: 'coded', code: t.code, atc: undefined, method: 'manual', by: me(p).name, utc: now(), reviewedBy: undefined, flags: (r.flags ?? []).filter((f) => !f.startsWith('Recode')) })
-    trail(p, r, `Coded to LLT ${t.name} (${t.code})`)
+    if (isForeign(r)) { r.translation = translation.trim(); r.lang ??= CATALOGUE.find((x) => x.id === r.itemId)?.lang }
+    trail(p, r, `Coded to LLT ${t.name} (${t.code})${isForeign(r) ? `; translation recorded: "${translation.trim()}"` : ''}`)
   }
   if (synonym) proposeSynonym(p, p.records.find((x) => x.id === ids[0])!, t.code)
   log(p, `Coded ${ids.length} record(s) to ${t.name}`)
@@ -148,17 +203,19 @@ export function codeDrug(p: CodingProject, ids: string[], drugId: string, atc: s
     if (r.form !== 'CM') throw new Error('Adverse events and history are coded with the medical dictionary.')
     Object.assign(r, { status: 'coded', code: d.id, atc, method: 'manual', by: me(p).name, utc: now(), reviewedBy: undefined, flags: (r.flags ?? []).filter((f) => !f.startsWith('Class needed') && !f.startsWith('Review')) })
     trail(p, r, `Coded to ${d.name} (${d.id}), class ${atc}`)
+    autoIndication(p, r)
   }
   if (synonym) proposeSynonym(p, p.records.find((x) => x.id === ids[0])!, d.id, undefined)
   log(p, `Coded ${ids.length} record(s) to ${d.name}`)
 }
 
 // ---------- queries to the site ----------
-export function raiseQuery(p: CodingProject, ids: string[], kind: 'split' | 'clarify' | 'not-drug', text: string) {
+export function raiseQuery(p: CodingProject, ids: string[], kind: 'split' | 'clarify' | 'not-drug' | 'indication', text: string) {
   needRole(p, 'coder', 'Raising a coding query')
   if (text.trim().length < 10) throw new Error('Write the query to the site: what is unclear and what you need.')
   for (const id of ids) {
     const r = p.records.find((x) => x.id === id)!
+    if (kind === 'indication') { Object.assign(r, { status: 'query', indQueried: true, indCode: undefined, reviewedBy: undefined, query: { kind, text: text.trim(), by: me(p).name, utc: now() } }); trail(p, r, `Indication query: ${text.trim()}`); continue }
     Object.assign(r, { status: 'query', queried: true, code: undefined, atc: undefined, reviewedBy: undefined, query: { kind, text: text.trim(), by: me(p).name, utc: now() } })
     trail(p, r, `Query (${kind}): ${text.trim()}`)
   }
@@ -168,6 +225,13 @@ export function raiseQuery(p: CodingProject, ids: string[], kind: 'split' | 'cla
 export function siteAnswers(p: CodingProject): number {
   let n = 0
   for (const r of p.records.filter((x) => x.status === 'query')) {
+    if (r.query?.kind === 'indication') {
+      n++
+      const k = r.ind ? INDICATIONS[norm(r.ind)] : undefined
+      if (k && 'query' in k) { const old = r.ind; r.ind = k.clarify; r.query.answer = `Indication changed to "${k.clarify}"`; trail(p, r, `Site changed the indication from "${old}" to "${k.clarify}"`, 'Site') }
+      else { r.query!.answer = 'The indication is correct as entered.'; r.flags = [...(r.flags ?? []), 'Unnecessary query: the site confirmed the indication']; trail(p, r, 'Site: the indication is correct as entered.', 'Site') }
+      r.status = r.code ? 'coded' : 'uncoded'; autoIndication(p, r); continue
+    }
     const it = r.itemId ? itemFor(r.study, r.form, r.verbatim, r.ind) : undefined
     const ans = it ? answerIn(it, p.sdd) : undefined
     n++
@@ -193,7 +257,8 @@ export function approve(p: CodingProject, ids: string[]) {
   for (const id of ids) {
     const r = p.records.find((x) => x.id === id)!
     if (r.status !== 'coded') continue
-    if (r.by === me(p).name) throw new Error(`${r.id} was coded by you: coding is approved by a second person.`)
+    if (r.by === me(p).name || r.indBy === me(p).name) throw new Error(`${r.id} was coded by you: coding is approved by a second person.`)
+    if (r.form === 'CM' && r.ind && !r.indCode) throw new Error(`${r.id}: code the indication "${r.ind}" before approval (CC-28).`)
     r.status = 'approved'; r.reviewedBy = me(p).name; trail(p, r, 'Approved')
   }
   log(p, `Approved ${ids.length} record(s)`)
@@ -245,10 +310,39 @@ export function expectedPt(d: MedDict, a: { pt: string; llt?: string }) {
   const l = a.llt ? lltNamed(d, a.llt) : undefined
   return (l && ptOf(d, l.code)?.name) ?? a.pt
 }
+// The answer for a record: from the catalogue, or derived for an imported verbatim that matches a
+// current term or a single-class drug record exactly.
+export function keyFor(p: CodingProject, r: Pick<Rec, 'study' | 'form' | 'verbatim' | 'ind'>): { a: Answer; cc: string } | undefined {
+  const it = itemFor(r.study, r.form, r.verbatim, r.ind)
+  if (it) return { a: answerIn(it, p.sdd), cc: it.cc }
+  if (r.form !== 'CM') { const t = exactLlt(SMD['1.0'], r.verbatim); return t ? { a: { pt: ptOf(SMD['1.0'], t.code)!.name, llt: t.name }, cc: 'CC-01' } : undefined }
+  const d = exactDrugIn(p.sdd, r.verbatim)
+  if (!d) return undefined
+  const atc = d.atc.length === 1 ? d.atc[0] : d.ingredients.join('+') === 'acetylsalicylic acid' ? (/prevent|heart|stroke|thromb/i.test(r.ind ?? '') ? 'W01AC' : 'K02BA') : undefined
+  return atc ? { a: { ing: d.ingredients.join('+'), atc, trade: d.generic ? undefined : d.name }, cc: 'CC-21' } : undefined
+}
+export function indicationVerdict(p: CodingProject, r: Rec): Verdict | undefined {
+  if (r.form !== 'CM' || !r.ind || r.status === 'replaced' || r.status === 'removed') return undefined
+  const k = INDICATIONS[norm(r.ind)]
+  if (k && 'query' in k) return r.indQueried ? { ok: true, why: 'Indication queried.' } : { ok: false, why: `The indication "${r.ind}" is too vague to code: query it (CC-28).` }
+  if (!r.indCode) return { ok: undefined, why: 'Indication not coded yet.' }
+  const d = smdOf(p), want = indicationLlt(r.ind, d), got = d.terms.get(r.indCode)
+  if (!want) return { ok: undefined, why: 'Indication not in the answer key.' }
+  if (ptOf(d, got!.code)?.name !== ptOf(d, want.code)?.name) return { ok: false, why: `Indication coded to ${got?.name}; expected ${want.name} (CC-28).` }
+  return { ok: true, why: 'Indication correct.' }
+}
 export function verdict(p: CodingProject, r: Rec): Verdict {
-  const it = r.itemId ? itemFor(r.study, r.form, r.verbatim, r.ind) : undefined
-  if (!it) return { ok: undefined, why: 'Not in the answer key.' }
-  const a: Answer = answerIn(it, p.sdd)
+  const v = drugOrMedVerdict(p, r)
+  const iv = indicationVerdict(p, r)
+  if (v.ok && iv && iv.ok === false) return { ok: false, why: iv.why }
+  if (v.ok && iv && iv.ok === undefined) return { ok: undefined, why: `${v.why} ${iv.why}` }
+  return v
+}
+function drugOrMedVerdict(p: CodingProject, r: Rec): Verdict {
+  const key = keyFor(p, r)
+  if (!key) return { ok: undefined, why: 'Not in the answer key.' }
+  const it = { cc: key.cc }
+  const a: Answer = key.a
   if ('query' in a) {
     if (r.status === 'replaced' || r.status === 'removed') return { ok: true, why: 'Queried and resolved by the site.' }
     if (r.status === 'query') return { ok: true, why: 'Query open with the site.' }

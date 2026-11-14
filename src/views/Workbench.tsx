@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useStore } from '../state'
-import { autoencode, siteAnswers, codeMed, codeDrug, raiseQuery, verdict, label, smdOf, sddList, me, stats, type Rec, type CodingProject } from '../domain/coding'
+import { autoencode, siteAnswers, codeMed, codeDrug, codeIndication, raiseQuery, verdict, label, smdOf, sddList, me, stats, isForeign, type Rec, type CodingProject } from '../domain/coding'
+import { suggestAll, acceptSuggestion, rejectSuggestion, setAssistant, assistantStats, MODEL_CARD } from '../domain/assistant'
+import { LANG_NAME } from '../domain/dictmed'
 import { searchMed, path } from '../domain/dictmed'
 import { atcByCode } from '../domain/dictdrug'
 import { norm } from '../domain/catalogue'
@@ -39,12 +41,13 @@ export default function Workbench() {
   return (
     <div className="space-y-4">
       <Panel title="Coding workbench" sub="The autoencoder codes verbatims that match a current dictionary term or an approved synonym exactly. You code the rest, or query the site when a term cannot be coded as written."
-        right={<div className="flex gap-2"><Btn tone="solid" onClick={() => act((x) => { autoencode(x) })}>Run the autoencoder</Btn><Btn tone="grey" disabled={!s.queries} onClick={() => act((x) => { siteAnswers(x) })}>Receive site answers ({s.queries})</Btn></div>}>
+        right={<div className="flex gap-2"><Btn tone="solid" onClick={() => act((x) => { autoencode(x); suggestAll(x) })}>Run the autoencoder</Btn><Btn tone="grey" disabled={!s.queries} onClick={() => act((x) => { siteAnswers(x) })}>Receive site answers ({s.queries})</Btn></div>}>
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
           <Stat label="Records" value={s.total} /><Stat label="To code" value={s.uncoded} tone={s.uncoded ? 'amber' : 'green'} /><Stat label="Autoencoded" value={s.auto} /><Stat label="By synonym" value={s.synonym} />
           <Stat label="Manual" value={s.manual} /><Stat label="Approved" value={s.approved} tone={s.approved === s.total ? 'green' : 'grey'} />
         </div>
       </Panel>
+      <AssistantPanel />
       <div className="grid lg:grid-cols-[22rem_1fr] gap-4">
         <Panel title={`Verbatims (${groups.length} groups)`}>
           <div className="grid grid-cols-2 gap-2">
@@ -56,7 +59,7 @@ export default function Workbench() {
           <ul className="max-h-[34rem] overflow-y-auto space-y-0.5">
             {groups.map(([k, rs]) => (
               <li key={k}><button onClick={() => setSel(k)} aria-current={cur?.[0] === k ? 'true' : undefined} className={`w-full text-left px-2 py-1 rounded text-xs ${cur?.[0] === k ? 'bg-lab-fda-soft text-lab-fda' : 'hover:bg-lab-panel-strong'}`}>
-                <span className="font-mono text-[10px] text-lab-text-muted mr-1">{rs[0].form}</span>{rs[0].verbatim}{rs[0].form === 'CM' && <span className="text-lab-text-muted"> · {rs[0].ind}</span>}
+                <span className="font-mono text-[10px] text-lab-text-muted mr-1">{rs[0].form}</span>{rs[0].verbatim}{rs[0].form === 'CM' && <span className="text-lab-text-muted"> · {rs[0].ind}</span>}{rs[0].suggestion && !rs[0].suggestion.decision && rs[0].status === 'uncoded' && <span className="text-lab-purple"> ✦</span>}
                 <span className="float-right text-lab-text-muted">{rs.length}{rs.some((r) => r.flags?.length) ? ' ⚑' : ''}</span>
               </button></li>
             ))}
@@ -83,9 +86,9 @@ function Group({ rs }: { rs: Rec[] }) {
           const v = show ? verdict(p!, r) : null
           return [
             <input type="checkbox" aria-label={`Select ${r.id}`} disabled={!['uncoded', 'coded'].includes(r.status)} checked={ids.includes(r.id)} onChange={(e) => setIds(e.target.checked ? [...ids, r.id] : ids.filter((x) => x !== r.id))} />,
-            <span className="font-mono">{r.id}</span>, `${r.study} ${r.subj}`,
+            <span className="font-mono">{r.id}</span>, <span>{r.study} {r.subj}{isForeign(r) && <Pill tone="purple" className="ml-1">{r.lang ? LANG_NAME[r.lang] : 'non-English'}</Pill>}</span>,
             <span><Pill tone={STATUS_TONE[r.status]}>{r.status}</Pill>{r.method && <span className="block text-[10px] text-lab-text-muted">{r.method}{r.by ? `, ${r.by}` : ''}{r.reviewedBy ? `; approved ${r.reviewedBy}` : ''}</span>}</span>,
-            <span className="text-[11px]">{r.code ? label(p!, r) : r.query ? `Query: ${r.query.text}${r.query.answer ? ` → ${r.query.answer}` : ''}` : ''}{r.flags?.map((f) => <span key={f} className="block text-lab-amber">⚑ {f}</span>)}</span>,
+            <span className="text-[11px]">{r.translation && <span className="block text-lab-text-muted">Translation: {r.translation}</span>}{r.form === 'CM' && r.ind && <span className="block text-lab-text-muted">Indication: {r.indCode ? smdOf(p!).terms.get(r.indCode)?.name : 'not coded'}</span>}{r.code ? label(p!, r) : r.query ? `Query: ${r.query.text}${r.query.answer ? ` → ${r.query.answer}` : ''}` : ''}{r.flags?.map((f) => <span key={f} className="block text-lab-amber">⚑ {f}</span>)}</span>,
             v && v.ok !== undefined ? <span className={`text-[11px] ${v.ok ? (v.llt === false ? 'text-lab-amber' : 'text-lab-cdsco') : 'text-lab-red'}`}>{v.why}</span> : '',
             <Btn tone="grey" onClick={() => setTrail(trail === r.id ? '' : r.id)}>Trail</Btn>,
           ]
@@ -93,15 +96,18 @@ function Group({ rs }: { rs: Rec[] }) {
         {trail && <ul className="text-[11px] text-lab-text-muted list-disc ml-5">{rs.find((r) => r.id === trail)?.trail.map((t, i) => <li key={i}>{t.utc.slice(0, 16).replace('T', ' ')} · {t.by}: {t.what}</li>)}</ul>}
         <p className="text-[11px] text-lab-text-muted">{ids.length} selected. Actions below apply to the selected records.</p>
       </Panel>
-      {open.length > 0 && (med ? <MedSearch ids={ids} verbatim={first.verbatim} /> : <DrugSearch ids={ids} verbatim={first.verbatim} ind={first.ind ?? ''} />)}
+      {first.suggestion && !first.suggestion.decision && first.status === 'uncoded' && <SuggestionBox rs={rs.filter((r) => r.suggestion && !r.suggestion.decision && r.status === 'uncoded')} />}
+      {open.length > 0 && (med ? <MedSearch ids={ids} verbatim={first.verbatim} foreign={isForeign(first)} /> : <DrugSearch ids={ids} verbatim={first.verbatim} ind={first.ind ?? ''} />)}
+      {!med && first.ind && rs.some((r) => ['coded', 'uncoded', 'approved'].includes(r.status)) && <IndicationPanel rs={rs} />}
       {open.length > 0 && <QueryBox ids={ids} med={med} />}
       {me(p!).role !== 'coder' && open.length > 0 && <p className="text-xs text-lab-text-muted">Coding and queries are for the coder: switch roles in the header.</p>}
     </div>
   )
 }
 
-function MedSearch({ ids, verbatim }: { ids: string[]; verbatim: string }) {
+function MedSearch({ ids, verbatim, foreign }: { ids: string[]; verbatim: string; foreign: boolean }) {
   const { p, act } = useStore()
+  const [tr, setTr] = useState('')
   const [q, setQ] = useState(verbatim.replace(/[^\p{L}\s-]/gu, ' ').trim())
   const [pick, setPick] = useState('')
   const [syn, setSyn] = useState(false)
@@ -124,7 +130,73 @@ function MedSearch({ ids, verbatim }: { ids: string[]; verbatim: string }) {
         {!res.length && <li className="text-xs text-lab-text-muted py-1">No lowest-level term contains every word. Try fewer words, or another word for the same thing.</li>}
       </ul>
       <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={syn} onChange={(e) => setSyn(e.target.checked)} /> Propose "{norm(verbatim)}" as a study synonym for this term (a reviewer approves it)</label>
-      <Btn tone="solid" disabled={!pick || !ids.length} onClick={() => { if (act((x) => codeMed(x, ids, pick, syn))) setPick('') }}>Code {ids.length} record{ids.length === 1 ? '' : 's'}</Btn>
+      {foreign && <label className="text-xs text-lab-text-muted block">Your translation into English (recorded with the coding, CC-12)<input className={ic('')} value={tr} onChange={(e) => setTr(e.target.value)} placeholder="What the term means; note if it could mean more than one thing" /></label>}
+      <Btn tone="solid" disabled={!pick || !ids.length || (foreign && tr.trim().length < 3)} onClick={() => { if (act((x) => codeMed(x, ids, pick, syn, tr))) setPick('') }}>Code {ids.length} record{ids.length === 1 ? '' : 's'}</Btn>
+    </Panel>
+  )
+}
+
+function AssistantPanel() {
+  const { p, act } = useStore()
+  const a = assistantStats(p!)
+  const [card, setCard] = useState(false)
+  return (
+    <Panel title="AI coding assistant" sub="A simulated suggestion model. It proposes a term or a query for verbatims the autoencoder leaves; you decide each one and stay responsible for the code."
+      right={<div className="flex gap-2 items-center">{p!.assistant ? <Pill tone="purple">On</Pill> : <Pill>Off</Pill>}<Btn tone="grey" onClick={() => act((x) => setAssistant(x, !x.assistant))}>{p!.assistant ? 'Switch off' : 'Switch on'} (coding lead)</Btn><Btn tone="grey" onClick={() => setCard(!card)}>Model card</Btn></div>}>
+      {p!.assistant && <p className="text-xs text-lab-text-muted">{a.shown} suggestions: {a.undecided} to decide, {a.accepted} accepted, {a.rejected} rejected.{showVerdicts(p!) && (a.accepted + a.rejected) > 0 ? ` Wrong suggestions accepted: ${a.acceptedWrong}. Right suggestions rejected: ${a.rejectedRight}.` : ''} Groups with a suggestion to decide are marked ✦.</p>}
+      {card && (
+        <div className="text-xs space-y-1 rounded border border-lab-line p-2">
+          <p><b>{MODEL_CARD.name}</b>, version {MODEL_CARD.version}. Intended use: {MODEL_CARD.use}</p>
+          <p>Validation: {MODEL_CARD.validation}</p>
+          <ul className="list-disc ml-5">{MODEL_CARD.limits.map((l) => <li key={l}>{l}</li>)}</ul>
+          <p className="text-lab-text-muted">FDA's draft guidance on AI to support regulatory decision-making (January 2025) asks for a credibility assessment scaled to the model's risk in its context of use; the EMA and FDA guiding principles of good AI practice (January 2026) include a risk-based approach with human oversight. Here the context of use is coding support, the risk is miscoding safety data, and the control is a trained coder deciding every suggestion, then independent review.</p>
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function SuggestionBox({ rs }: { rs: Rec[] }) {
+  const { p, act } = useStore()
+  const [why, setWhy] = useState('')
+  const s = rs[0].suggestion!
+  const d = smdOf(p!)
+  const what = s.query ? `Query the site (${s.query === 'split' ? 'split into separate events' : s.query === 'not-drug' ? 'not a medication' : 'clarify the term'})`
+    : rs[0].form === 'CM' ? (() => { const dr = sddList(p!).find((x) => x.id === s.code); return `${dr?.name} (${dr?.ingredients.join(' + ')}), class ${s.atc}` })()
+    : (() => { const t = d.terms.get(s.code!); return `LLT ${t?.name} → PT ${t ? label(p!, { ...rs[0], code: t.code }) .split(' → ')[1] : ''}` })()
+  return (
+    <Panel title="Assistant suggestion" sub={`For ${rs.length} record${rs.length === 1 ? '' : 's'} in this group.`}>
+      <p className="text-sm text-lab-text"><span className="text-lab-purple">✦</span> {what} <Pill tone={s.conf >= 0.9 ? 'purple' : 'grey'}>confidence {s.conf.toFixed(2)}</Pill></p>
+      <p className="text-xs text-lab-text-muted">Rationale: {s.why}</p>
+      <div className="flex flex-wrap gap-2 items-end">
+        <Btn tone="green" onClick={() => act((x) => acceptSuggestion(x, rs.map((r) => r.id)))}>Accept for {rs.length}</Btn>
+        <input aria-label="Reason for rejecting" className={ic('max-w-md')} value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Why it is wrong (convention, route, added diagnosis…)" />
+        <Btn tone="red" disabled={why.trim().length < 5} onClick={() => { if (act((x) => rejectSuggestion(x, rs.map((r) => r.id), why))) setWhy('') }}>Reject</Btn>
+      </div>
+      <p className="text-[11px] text-lab-text-muted">After rejecting, code the records yourself below.</p>
+    </Panel>
+  )
+}
+
+function IndicationPanel({ rs }: { rs: Rec[] }) {
+  const { p, act } = useStore()
+  const ind = rs[0].ind!
+  const [q, setQ] = useState(ind)
+  const [pick, setPick] = useState('')
+  const d = smdOf(p!)
+  const res = searchMed(d, q, 20)
+  const ids = rs.filter((r) => !['replaced', 'removed', 'query'].includes(r.status)).map((r) => r.id)
+  const coded = rs.find((r) => r.indCode)
+  return (
+    <Panel title={`Indication: "${ind}"`} sub={`Code the indication with the medical dictionary (CC-28). ${coded ? `Now: ${d.terms.get(coded.indCode!)?.name}.` : 'Not coded yet.'}`}>
+      <input aria-label="Search the indication" className={ic('')} value={q} onChange={(e) => setQ(e.target.value)} />
+      <ul className="max-h-40 overflow-y-auto">
+        {res.filter((t) => t.current).map((t) => <li key={t.code}><label className="flex gap-2 text-xs py-0.5"><input type="radio" name="ind" checked={pick === t.code} onChange={() => setPick(t.code)} /> {t.name} <span className="text-lab-text-muted">PT {path(d, t.code)[3]?.name}</span></label></li>)}
+      </ul>
+      <div className="flex gap-2">
+        <Btn tone="solid" disabled={!pick || !ids.length} onClick={() => act((x) => codeIndication(x, ids, pick))}>Code the indication for {ids.length}</Btn>
+        <Btn tone="grey" disabled={!ids.length} onClick={() => act((x) => raiseQuery(x, ids, 'indication', 'The indication is too vague to code. Please give the condition the medication was taken for.'))}>Query the indication</Btn>
+      </div>
     </Panel>
   )
 }

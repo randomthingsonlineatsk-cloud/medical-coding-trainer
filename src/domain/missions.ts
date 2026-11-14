@@ -1,5 +1,8 @@
 // Missions: set coding tasks graded against the answer key. The grade reads the project itself.
-import { createProject, autoencode, raiseQuery, codeMed, codeDrug, approve, siteAnswers, stats, consistency, verdict, smdOf, sddList, BAD_SYNONYMS, companySynonyms, type CodingProject, type Rec } from './coding'
+import { createProject, autoencode, raiseQuery, codeMed, codeDrug, codeIndication, approve, siteAnswers, stats, consistency, verdict, keyFor, indicationLlt, indicationVerdict, isForeign, smdOf, sddList, BAD_SYNONYMS, companySynonyms, type CodingProject, type Rec } from './coding'
+import { QUESTIONS, customPotassiumOk } from './retrieval'
+import { assistantStats, suggestAll } from './assistant'
+import { INDICATIONS } from './catalogue'
 import { itemFor, answerIn, norm, CATALOGUE } from './catalogue'
 import { staleSynonyms } from './upgrade'
 import { hash } from './util'
@@ -12,7 +15,7 @@ const ALL = ['HLV-204-201', 'RSP-118-302', 'DRM-501-201']
 const live = (p: CodingProject) => p.records.filter((r) => !['replaced', 'removed'].includes(r.status))
 const resolved = (p: CodingProject) => live(p).every((r) => ['coded', 'approved'].includes(r.status))
 const allApproved = (p: CodingProject) => live(p).length > 0 && live(p).every((r) => r.status === 'approved' && r.reviewedBy && r.reviewedBy !== r.by)
-const keyOf = (p: CodingProject, r: Rec) => { const it = itemFor(r.study, r.form, r.verbatim, r.ind); return it ? answerIn(it, p.sdd) : undefined }
+const keyOf = (p: CodingProject, r: Rec) => keyFor(p, r)?.a
 const queriesRight = (p: CodingProject) => p.records.filter((r) => { const a = keyOf(p, r); return a && 'query' in a }).every((r) => r.queried)
 const noUnneeded = (p: CodingProject) => stats(p).unnecessary === 0 && p.records.filter((r) => r.status === 'query').every((r) => { const a = keyOf(p, r); return a && 'query' in a })
 const precision = (p: CodingProject) => { const s = stats(p); return s.correct ? s.precise / s.correct : 0 }
@@ -55,6 +58,7 @@ export const MISSIONS: Mission[] = [
       { id: 'cls', text: 'Every multi-class drug has the class its indication and route call for', hint: 'Aspirin, fluticasone, mometasone and budesonide (CC-25).', weight: 15, met: (p) => p.records.filter((r) => r.form === 'CM' && ['coded', 'approved'].includes(r.status) && /aspirin|flut|nasoflute|mometasone|budesonide/i.test(r.verbatim)).every((r) => verdict(p, r).ok === true) },
       { id: 'q', text: 'Class names and non-drugs queried, and nothing else', hint: 'CC-26, CC-27.', weight: 15, met: (p) => queriesRight(p) && noUnneeded(p) },
       { id: 'trade', text: 'Reported trade names coded to their trade-name records (90% or more)', hint: 'CC-21.', weight: 10, met: (p) => precision(p) >= 0.9 },
+      { id: 'ind', text: 'Every indication coded with the medical dictionary, correctly', hint: 'CC-28: the autoencoder codes exact indications; code the rest in the indication panel.', weight: 10, met: (p) => live(p).filter((r) => r.form === 'CM' && r.ind).every((r) => indicationVerdict(p, r)?.ok === true) },
       { id: 'rev', text: 'Every record approved by a second person', hint: 'Switch to the reviewer.', weight: 20, met: allApproved },
     ],
   },
@@ -105,6 +109,34 @@ export const MISSIONS: Mission[] = [
       { id: 'llt', text: 'The closest LLT or trade record for 90% or more', hint: 'CC-01, CC-21.', weight: 10, met: (p) => precision(p) >= 0.9 },
     ],
   },
+  {
+    id: 'M6', title: 'Retrieve the safety data',
+    brief: 'The three studies are coded and approved. The safety physician asks five questions and needs a custom query. Use the standard search groups (narrow and broad), the system-class counts with and without secondary links, and build a custom query on the Retrieval page.',
+    make: (name) => { const p = createProject({ name, studies: ALL, forms: ['AE', 'MH', 'CM'], seed: 16 }); solve(p); return p },
+    goals: [
+      ...QUESTIONS.map((q) => ({ id: q.id, text: q.text, hint: q.hint, weight: 15, met: (p: CodingProject) => (p.answers?.[q.id] ?? '').trim() === q.answer(p) })),
+      { id: 'cq', text: 'A custom query "Potassium disturbances" with every potassium preferred term, up and down, and nothing else', hint: 'Three PTs: the diagnosis and test-result terms for a high value, and the low-potassium term.', weight: 25, met: customPotassiumOk },
+    ],
+  },
+  {
+    id: 'M7', title: 'Code with the AI assistant',
+    brief: 'An AI coding assistant suggests a term for each verbatim the autoencoder leaves. It is usually right and sometimes confidently wrong. Decide every suggestion: accept the right ones, reject the wrong ones with a reason and code them yourself. You stay responsible for every code.',
+    make: (name) => {
+      const p = createProject({ name, studies: ALL, forms: ['AE', 'MH', 'CM'], seed: 17 })
+      for (const syn of p.synonyms) if (BAD_SYNONYMS[syn.verbatim]) { syn.status = 'retired'; syn.note = 'Retired at the company synonym review, June 2026.' }
+      p.assistant = true
+      const as = p.as; p.as = p.team.findIndex((m) => m.role === 'lead'); autoencode(p); suggestAll(p); p.as = as
+      return p
+    },
+    goals: [
+      { id: 'acc', text: 'Accuracy 95% or more', hint: 'Check each suggestion against the conventions before accepting.', weight: 20, met: (p) => stats(p).accuracy >= 95 && stats(p).judged > 0 },
+      { id: 'bias', text: 'No wrong suggestion accepted', hint: 'High confidence is not proof. Look for added diagnoses, the route of a multi-class drug, guessed products and ambiguous translations.', weight: 25, met: (p) => assistantStats(p).acceptedWrong === 0 },
+      { id: 'eff', text: 'At least 85% of the right suggestions accepted', hint: 'Rejecting good suggestions wastes the tool.', weight: 10, met: (p) => { const a = assistantStats(p); return a.right > 0 && a.acceptedRight / a.right >= 0.85 } },
+      { id: 'dec', text: 'Every suggestion decided', hint: 'Accept or reject; a rejection needs a reason.', weight: 10, met: (p) => assistantStats(p).shown > 0 && assistantStats(p).undecided === 0 },
+      { id: 'q', text: 'All queries needed, none unnecessary', hint: 'CC-05 to CC-07, CC-12, CC-26, CC-27.', weight: 15, met: (p) => queriesRight(p) && noUnneeded(p) },
+      { id: 'rev', text: 'Every record approved by a second person', hint: 'Review page.', weight: 20, met: allApproved },
+    ],
+  },
 ]
 
 // The answer key applied by the system (for the M4 start and the tests): every record coded to
@@ -121,12 +153,19 @@ export function solve(p: CodingProject) {
       if ('pt' in a) {
         const d = smdOf(p)
         const t = [...d.terms.values()].find((x) => x.level === 'LLT' && x.current && x.name.toLowerCase() === (a.llt ?? a.pt).toLowerCase())
-        if (t) codeMed(p, [r.id], t.code)
+        const en = itemFor(r.study, r.form, r.verbatim, r.ind)?.en ?? 'translation checked'
+        if (t) codeMed(p, [r.id], t.code, false, isForeign(r) ? en : '')
       } else {
         const list = sddList(p)
         const rec = list.find((d) => d.name === a.trade && d.ingredients.join('+') === a.ing) ?? list.find((d) => d.generic && d.ingredients.join('+') === a.ing)
         if (rec) codeDrug(p, [r.id], rec.id, a.atc)
       }
+    }
+    for (const r of p.records.filter((x) => x.form === 'CM' && x.ind && !x.indCode && ['coded', 'uncoded'].includes(x.status))) {
+      const k = INDICATIONS[norm(r.ind!)]
+      if (k && 'query' in k) { if (r.status === 'coded') raiseQuery(p, [r.id], 'indication', 'The indication is too vague to code. Please give the condition the medication was taken for.'); continue }
+      const t = indicationLlt(r.ind!, smdOf(p))
+      if (t) codeIndication(p, [r.id], t.code)
     }
     siteAnswers(p)
   }

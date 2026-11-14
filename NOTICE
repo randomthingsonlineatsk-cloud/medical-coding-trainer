@@ -15,7 +15,10 @@ or WHODrug content. Ingredient names are public International Nonproprietary Nam
 a trademark of ICH, maintained by the MSSO; WHODrug is a product of the Uppsala Monitoring
 Centre; both are named for education only and real use requires their licences. The coding
 conventions are written in this app's own words on the principles of the ICH "MedDRA Term
-Selection: Points to Consider". Not a validated system; the signatures are practice
+Selection: Points to Consider". The Standard Search Groups are invented and contain no SMQ content. The language versions are
+training translations of a few terms. The AI coding assistant is a simulation with invented
+figures, not a real model.
+Not a validated system; the signatures are practice
 signatures; no real study data. Everything stays in the browser.
 
 The dictionaries are shared with the CDM Query & Edit-Check Console by the same author
