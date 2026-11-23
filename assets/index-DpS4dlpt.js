@@ -27,6 +27,9 @@ Brain and nerves
     Abnormal skin sensation
       Tingling | Pins and needles; Paraesthesia; Tingling in fingers
       Numbness | Numbness in hands; Loss of sensation
+  Nerve damage
+    Peripheral nerve disorders
+      Peripheral neuropathy | Peripheral sensory neuropathy; Neuropathy peripheral; Numb and tingling feet
 Heart and rhythm
   Heart rhythm disorders
     Atrial rhythm disorders
@@ -53,6 +56,9 @@ Blood vessels and circulation
       Swelling of the legs | Ankle swelling; Swollen ankles; Swelling both ankles; Oedema of legs; Peripheral oedema; Leg swelling
     Flushing
       Flushing episode | Flushing; Hot flush; Facial flushing
+  Blood clots
+    Lung blood clots
+      Pulmonary embolism | PE; Lung clot; Pulmonary thromboembolism
 Lungs and airways
   Cough and airway irritation
     Cough symptoms
@@ -72,6 +78,9 @@ Lungs and airways
   Voice disorders
     Voice changes
       Hoarseness | Dysphonia; Hoarse voice; Loss of voice
+  Lung inflammation
+    Non-infective lung inflammation
+      Pneumonitis | Interstitial lung disease; Lung inflammation; Drug-induced pneumonitis
 Digestive system
   Stomach and gut symptoms
     Nausea and vomiting
@@ -91,6 +100,9 @@ Digestive system
   Appendix conditions
     Appendix inflammation
       Appendix inflammation | Appendicitis; Acute appendicitis
+  Mouth disorders
+    Mouth inflammation
+      Stomatitis | Mouth ulcers; Oral mucositis; Sore mouth
 Kidneys and urinary tract
   Kidney function
     Acute kidney conditions
@@ -142,6 +154,9 @@ Skin
   Hives
     Urticaria conditions
       Urticaria | Hives; Nettle rash; Wheals
+  Hair disorders
+    Hair loss conditions
+      Hair loss | Alopecia; Hair thinning
 Muscles, bones and joints
   Muscle symptoms
     Muscle spasm and cramp
@@ -165,6 +180,9 @@ Metabolism and nutrition
     Potassium disorders
       High potassium | Hyperkalaemia; Potassium increased; Raised potassium
       Low potassium | Hypokalaemia; Potassium decreased
+  Appetite disorders
+    Appetite changes
+      Decreased appetite | Loss of appetite; Appetite lost; Anorexia
 Hormones and glands
   Thyroid conditions
     Underactive thyroid
@@ -237,6 +255,17 @@ Operations and procedures
   Joint operations
     Joint replacement
       Knee replacement | Total knee replacement; Knee arthroplasty
+Blood and lymph
+  White cell disorders
+    Low white cell counts
+      Neutropenia | Neutrophil count decreased; Low neutrophils
+      Febrile neutropenia | Neutropenic fever; Fever with low neutrophils
+  Red cell disorders
+    Anaemias
+      Anaemia | Anemia; Low haemoglobin; Haemoglobin decreased
+  Platelet disorders
+    Low platelet counts
+      Thrombocytopenia | Platelet count decreased; Low platelets
 `,m=[{kind:`retire`,llt:`Head ache`,note:`Spelling variant retired; use Headache.`},{kind:`retire`,llt:`Tiredness`,note:`Retired as too vague; use Fatigue or Feeling tired.`},{kind:`retire`,llt:`Low back ache`,note:`Retired; use Low back pain.`},{kind:`retire`,llt:`Dizzy`,note:`Adjective form retired; use Dizziness.`},{kind:`move-pt`,pt:`Swelling of the legs`,toHlt:`Fluid retention in limbs`,toHlgt:`Fluid balance`,toSoc:`General and site of use`,note:`Moved from Blood vessels and circulation to General and site of use.`},{kind:`demote`,pt:`Muscle cramps`,toPt:`Muscle pain`,note:`Muscle cramps is now an LLT under Muscle pain; LLT codes keep, PT changes.`},{kind:`add`,pt:`Upper respiratory tract infection`,llt:`Upper airway infection`,note:`New LLT.`},{kind:`add`,pt:`Head pain`,llt:`Headache worse in morning`,note:`New LLT.`}],h=(e,t)=>({SOC:`91`,HLGT:`92`,HLT:`93`,PT:`94`,LLT:`95`})[e]+String(parseInt(f(e+`:`+t.toLowerCase()).slice(-10),16)%1e6).padStart(6,`0`);function g(e,t,n){let r=new Map,i=[],a=e=>(r.set(e.code,e),e);for(let e of n.split(`
 `)){if(!e.trim())continue;let t=(e.length-e.trimStart().length)/2,n=[`SOC`,`HLGT`,`HLT`,`PT`][t],[r,o]=e.trim().split(`|`).map(e=>e.trim()),s=a({code:h(n,r),name:r,level:n,parent:t?i[t-1]:void 0,current:!0});if(i[t]=s.code,i.length=t+1,n===`PT`)for(let e of[r,...o?o.split(`;`).map(e=>e.trim()):[]])a({code:h(`LLT`,e),name:e,level:`LLT`,parent:s.code,current:!0})}return _({version:e,released:t,terms:r,byName:new Map})}function _(e){e.byName=new Map;for(let t of e.terms.values()){let n=t.name.toLowerCase();e.byName.set(n,[...e.byName.get(n)??[],t])}return e}function v(e){let t=new Map([...e.terms].map(([e,t])=>[e,{...t,secondary:void 0}])),n={version:`1.1`,released:`2026-09-01`,terms:t,byName:new Map},r=(e,n)=>[...t.values()].find(t=>t.level===e&&t.name===n);for(let e of m){if(e.kind===`retire`&&(r(`LLT`,e.llt).current=!1),e.kind===`add`){let n=r(`PT`,e.pt);t.set(h(`LLT`,e.llt),{code:h(`LLT`,e.llt),name:e.llt,level:`LLT`,parent:n.code,current:!0})}if(e.kind===`move-pt`){let n=r(`SOC`,e.toSoc),i={code:h(`HLGT`,e.toHlgt),name:e.toHlgt,level:`HLGT`,parent:n.code,current:!0},a={code:h(`HLT`,e.toHlt),name:e.toHlt,level:`HLT`,parent:i.code,current:!0};t.set(i.code,i),t.set(a.code,a),r(`PT`,e.pt).parent=a.code}if(e.kind===`demote`){let n=r(`PT`,e.pt),i=r(`PT`,e.toPt);for(let e of t.values())e.level===`LLT`&&e.parent===n.code&&(e.parent=i.code);t.delete(n.code)}}return _(n)}var y={Pneumonia:[`Lungs and airways`],"Upper respiratory tract infection":[`Lungs and airways`],Cellulitis:[`Skin`],Folliculitis:[`Skin`],"Herpes zoster":[`Skin`,`Brain and nerves`],"Cold sore":[`Skin`],Gastroenteritis:[`Digestive system`],"Oral thrush":[`Digestive system`],Angioedema:[`Immune and allergy`],Urticaria:[`Immune and allergy`],"Allergic nose inflammation":[`Lungs and airways`],Asthma:[`Immune and allergy`],Fainting:[`Blood vessels and circulation`],"Heart-related chest pain":[`Blood vessels and circulation`],"Brain infarction":[`Blood vessels and circulation`],"Transient brain ischaemia":[`Blood vessels and circulation`],Conjunctivitis:[`Infections`],"Type 2 diabetes":[`Hormones and glands`]};function b(e){let t=[...e.terms.values()].filter(e=>e.level===`SOC`);for(let n of e.terms.values())n.level===`PT`&&y[n.name]&&(n.secondary=y[n.name].map(e=>t.find(t=>t.name===e)?.code).filter(Boolean));return e}var ee=b(g(`1.0`,`2026-03-01`,p)),x={"1.0":ee,"1.1":b(v(ee))};function te(e,t){let n=[],r=e.terms.get(t);for(;r;)n.unshift(r),r=r.parent?e.terms.get(r.parent):void 0;return n}var S=(e,t)=>te(e,t).find(e=>e.level===`PT`),C=(e,t)=>(e.byName.get(t.trim().toLowerCase())??[]).find(e=>e.level===`LLT`&&e.current);function ne(e,t,n=30){let r=t.trim().toLowerCase();if(r.length<2)return[];let i=r.split(/\s+/);return[...e.terms.values()].filter(e=>e.level===`LLT`&&i.every(t=>e.name.toLowerCase().includes(t))).sort((e,t)=>Number(t.current)-Number(e.current)||e.name.length-t.name.length).slice(0,n)}var w=e=>{let t={SOC:0,HLGT:0,HLT:0,PT:0,LLT:0};for(let n of e.terms.values())t[n.level]++;return t},re=(e,t)=>(e.terms.get(t)?.secondary??[]).map(t=>e.terms.get(t)).filter(Boolean),ie={de:`German`,es:`Spanish`,ja:`Japanese`,zh:`Chinese`,hi:`Hindi`},ae={Headache:{de:`Kopfschmerzen`,es:`Cefalea`,ja:`頭痛`,zh:`头痛`,hi:`सिरदर्द`},Dizziness:{de:`Schwindelgefühl`,es:`Mareo`,ja:`浮動性めまい`,zh:`头晕`,hi:`चक्कर आना`},Vertigo:{de:`Drehschwindel`,es:`Vértigo`,ja:`回転性めまい`,zh:`眩晕`},Nausea:{de:`Übelkeit`,es:`Náuseas`,ja:`悪心`,zh:`恶心`,hi:`जी मिचलाना`},Cough:{de:`Husten`,es:`Tos`,ja:`咳嗽`,zh:`咳嗽`,hi:`खांसी`},"Dry cough":{de:`Trockener Husten`,es:`Tos seca`,ja:`空咳`,zh:`干咳`,hi:`सूखी खांसी`},Fatigue:{de:`Ermüdung`,es:`Fatiga`,ja:`疲労`,zh:`疲劳`,hi:`थकान`},Rash:{de:`Ausschlag`,es:`Erupción`,ja:`発疹`,zh:`皮疹`},Diarrhoea:{de:`Diarrhoe`,es:`Diarrea`,ja:`下痢`,zh:`腹泻`,hi:`दस्त`},"Back pain":{de:`Rückenschmerzen`,es:`Dolor de espalda`,ja:`背部痛`,zh:`背痛`,hi:`पीठ दर्द`},Insomnia:{de:`Schlaflosigkeit`,es:`Insomnio`,ja:`不眠症`,zh:`失眠`,hi:`अनिद्रा`},Pruritus:{de:`Juckreiz`,es:`Prurito`,ja:`そう痒症`,zh:`瘙痒`,hi:`खुजली`},Hypertension:{de:`Hypertonie`,es:`Hipertensión`,ja:`高血圧`,zh:`高血压`,hi:`उच्च रक्तचाप`},Nasopharyngitis:{de:`Nasopharyngitis`,es:`Nasofaringitis`,ja:`鼻咽頭炎`,zh:`鼻咽炎`}},oe=new Map;for(let[e,t]of Object.entries(ae))for(let[n,r]of Object.entries(t))oe.set(r.toLowerCase(),{english:e,lang:n});function se(e,t){let n=C(e,t);if(n)return{term:n};let r=oe.get(t.trim().toLowerCase());if(!r)return;let i=C(e,r.english);return i?{term:i,lang:r.lang}:void 0}var ce=[],le=(e,t)=>ce.push({code:e,name:t,level:e.length===1?1:e.length===3?2:e.length===4?3:4});[[`E`,`Alimentary tract and metabolism`],[`E02`,`Acid-related disorders`],[`E02B`,`Ulcer and reflux agents`],[`E02BC`,`Proton pump blockers`],[`E02BA`,`H2 receptor blockers`],[`E07`,`Gut motility and antidiarrhoeals`],[`E07D`,`Intestinal motility reducers`],[`E07DA`,`Opioid-receptor antidiarrhoeals`],[`E10`,`Glucose-lowering drugs`],[`E10B`,`Oral glucose-lowering drugs`],[`E10BA`,`Biguanide class`],[`E10BH`,`DPP-4 blocker class`],[`E11`,`Vitamins`],[`E11C`,`Vitamin D group`],[`E11CC`,`Vitamin D and analogues`],[`F`,`Heart and circulation`],[`F07`,`Beta-blocking agents`],[`F07A`,`Beta blockers`],[`F07AB`,`Cardioselective beta blockers`],[`F08`,`Calcium channel blockers`],[`F08C`,`Vascular-selective calcium blockers`],[`F08CA`,`Dihydropyridine class`],[`F09`,`Renin-angiotensin agents`],[`F09A`,`ACE blockers`],[`F09AA`,`ACE blockers, plain`],[`F09C`,`Angiotensin receptor blockers`],[`F09CA`,`Angiotensin receptor blockers, plain`],[`F03`,`Diuretics`],[`F03A`,`Low-ceiling diuretics`],[`F03AA`,`Thiazide class`],[`F03C`,`High-ceiling diuretics`],[`F03CA`,`Sulfonamide loop class`],[`F03D`,`Potassium-sparing agents`],[`F03DA`,`Aldosterone antagonist class`],[`F10`,`Lipid-modifying agents`],[`F10A`,`Lipid modifiers, plain`],[`F10AA`,`Statin class`],[`W`,`Blood and blood-forming organs`],[`W01`,`Antithrombotic agents`],[`W01A`,`Antithrombotics`],[`W01AC`,`Platelet aggregation blockers`],[`W01AF`,`Direct factor Xa blockers`],[`I`,`Anti-infectives for systemic use`],[`I01`,`Antibacterials for systemic use`],[`I01C`,`Beta-lactam penicillins`],[`I01CA`,`Extended-spectrum penicillins`],[`I01CR`,`Penicillin combinations with beta-lactamase blockers`],[`I01A`,`Tetracycline class`],[`I01AA`,`Tetracyclines`],[`I01D`,`Other beta-lactams`],[`I01DC`,`Second-generation cephalosporins`],[`I01F`,`Macrolide class`],[`I01FA`,`Macrolides`],[`I01M`,`Quinolone class`],[`I01MA`,`Fluoroquinolones`],[`K`,`Nervous system and pain`],[`K02`,`Analgesics`],[`K02A`,`Opioids`],[`K02AA`,`Natural opium alkaloids`],[`K02AJ`,`Opioids in combination with non-opioid analgesics`],[`K02AX`,`Other opioids`],[`K02B`,`Other analgesics and antipyretics`],[`K02BA`,`Salicylic acid class (analgesic)`],[`K02BE`,`Anilide class`],[`K05`,`Psycholeptics`],[`K05B`,`Anxiolytics`],[`K05BA`,`Benzodiazepine anxiolytics`],[`K05C`,`Hypnotics and sedatives`],[`K05CF`,`Benzodiazepine-related hypnotics`],[`K06`,`Psychoanaleptics`],[`K06A`,`Antidepressants`],[`K06AB`,`Selective serotonin reuptake blockers`],[`O`,`Musculo-skeletal system`],[`O01`,`Anti-inflammatory and antirheumatic products`],[`O01A`,`Non-steroidal anti-inflammatories`],[`O01AE`,`Propionic acid class`],[`O01AB`,`Acetic acid class`],[`Q`,`Respiratory system and allergy`],[`Q06`,`Systemic antihistamines`],[`Q06A`,`Antihistamines for systemic use`],[`Q06AE`,`Piperazine class`],[`Q06AX`,`Other systemic antihistamines`],[`Q03`,`Drugs for obstructive airway diseases`],[`Q03A`,`Inhaled adrenergics`],[`Q03AC`,`Selective beta-2 agonists`],[`Q03D`,`Other systemic drugs for obstructive airway diseases`],[`Q03DC`,`Leukotriene receptor blockers`],[`Q05`,`Cough and cold preparations`],[`Q05C`,`Expectorants`],[`Q05CB`,`Mucolytics`],[`T`,`Systemic hormonal preparations`],[`T03`,`Thyroid therapy`],[`T03A`,`Thyroid preparations`],[`T03AA`,`Thyroid hormones`],[`T02`,`Corticosteroids for systemic use`],[`T02A`,`Corticosteroids, plain`],[`T02AB`,`Glucocorticoids`],[`U`,`Dermatologicals`],[`U07`,`Topical corticosteroids`],[`U07A`,`Corticosteroids, plain (skin)`],[`U07AA`,`Weak topical corticosteroids`],[`U07AD`,`Very potent topical corticosteroids`],[`I05`,`Antivirals for systemic use`],[`I05A`,`Direct acting antivirals`],[`I05AB`,`Nucleoside antivirals (herpes)`],[`X`,`Genito-urinary system`],[`X04`,`Urologicals`],[`X04C`,`Prostate drugs`],[`X04CA`,`Alpha-adrenoreceptor blockers (urology)`],[`Q03B`,`Other inhaled drugs for obstructive airway diseases`],[`Q03BA`,`Inhaled glucocorticoids`],[`Q03BB`,`Inhaled anticholinergics`],[`Q01`,`Nasal preparations`],[`Q01A`,`Decongestants and other nasal preparations`],[`Q01AD`,`Nasal corticosteroids`],[`U02`,`Emollients and protectives`],[`U02A`,`Emollients and protectives`],[`U02AC`,`Soft paraffin and fat products`],[`U07AC`,`Potent topical corticosteroids`],[`U11`,`Other dermatological preparations`],[`U11A`,`Other dermatological preparations`],[`U11AH`,`Agents for dermatitis, excluding corticosteroids`],[`E01`,`Stomatological preparations`],[`E01A`,`Stomatological preparations`],[`E01AB`,`Anti-infectives for local oral treatment`],[`K02BX`,`Other analgesics in combination (non-opioid)`]].forEach(([e,t])=>le(e,t));var ue=`
 atorvastatin|F10AA|Lipidra;Statorva;Atorlo
